@@ -1,33 +1,56 @@
 import { Tabs } from 'expo-router';
-import React from 'react';
-
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
-import { Colors } from '@/constants/theme';
-import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Ionicons } from '@expo/vector-icons'; 
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
   return (
-    <Tabs
-      screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+    <Tabs 
+      screenOptions={{ 
+        tabBarActiveTintColor: '#00B14F', 
         headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
+        tabBarStyle: { height: 65, paddingBottom: 10 } 
+      }}
+    >
       <Tabs.Screen
         name="index"
         options={{
           title: 'Home',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="house.fill" color={color} />,
+          tabBarIcon: ({ color }) => <Ionicons name="fast-food" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
+  name="reserved"
+  options={{
+    title: 'Reserved',
+    tabBarIcon: ({ color }) => <Ionicons name="bookmark" size={24} color={color} />,
+  }}
+/>
+      <Tabs.Screen
         name="explore"
         options={{
-          title: 'Explore',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="paperplane.fill" color={color} />,
+          title: 'Nearby',
+          tabBarIcon: ({ color }) => <Ionicons name="map" size={24} color={color} />,
+        }}
+      />
+      {/* NEW POST TAB */}
+      <Tabs.Screen
+        name="post"
+        options={{
+          title: 'Post',
+          tabBarIcon: ({ color }) => <Ionicons name="add-circle" size={32} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="activity"
+        options={{
+          title: 'Activity',
+          tabBarIcon: ({ color }) => <Ionicons name="receipt" size={24} color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Account',
+          tabBarIcon: ({ color }) => <Ionicons name="person" size={24} color={color} />,
         }}
       />
     </Tabs>
