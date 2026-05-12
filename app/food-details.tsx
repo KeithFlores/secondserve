@@ -1,101 +1,168 @@
-import React from 'react';
-import { View, Text, StyleSheet, Image, TouchableOpacity, ScrollView, Dimensions } from 'react-native';
+import React, { useState, useEffect, useRef } from 'react';
+import { StyleSheet, View, Text, Image, TouchableOpacity, SafeAreaView, Alert, ActivityIndicator, ScrollView } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
+import { WebView } from 'react-native-webview';
+import * as Location from 'expo-location';
+import { supabase } from '../lib/supabase';
 
-const { width } = Dimensions.get('window');
-
-export default function FoodDetails() {
-  const { title, store, image } = useLocalSearchParams();
+export default function FoodDetailsScreen() {
   const router = useRouter();
+  const mapRef = useRef<WebView>(null);
+  const params = useLocalSearchParams();
+  
+  const [loading, setLoading] = useState(false);
+  // This state tracks the claim status locally so the code shows up instantly
+  const [currentStatus, setCurrentStatus] = useState(params.status);
+  const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [locationLoading, setLocationLoading] = useState(true);
+
+  const isClaimed = currentStatus === 'Claimed';
+  // Generates a code like "RESCUE-A1B2C" based on the entry ID
+  const claimCode = `RESCUE-${String(params.id).substring(0, 5).toUpperCase()}`;
+
+  const storeLat = params.lat ? parseFloat(params.lat as string) : 7.0707;
+  const storeLng = params.lng ? parseFloat(params.lng as string) : 125.6092;
+
+  useEffect(() => {
+    (async () => {
+      try {
+        let { status } = await Location.requestForegroundPermissionsAsync();
+        if (status !== 'granted') return;
+        let location = await Location.getCurrentPositionAsync({});
+        setUserLocation({ lat: location.coords.latitude, lng: location.coords.longitude });
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLocationLoading(false);
+      }
+    })();
+  }, []);
+
+  const handleReserve = async () => {
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('donations')
+        .update({ status: 'Claimed' })
+        .eq('id', params.id);
+      
+      if (error) throw error;
+
+      // Update local state so the "RESCUE-XXX" code appears immediately
+      setCurrentStatus('Claimed');
+      Alert.alert("Claimed!", "Show your rescue code at the counter.");
+    } catch (e: any) {
+      Alert.alert("Error", e.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const mapHtml = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <style>body { margin: 0; } #map { height: 100vh; }</style>
+      </head>
+      <body>
+        <div id="map"></div>
+        <script>
+          var map = L.map('map', { zoomControl: false });
+          L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+          L.marker([${storeLat}, ${storeLng}]).addTo(map);
+          map.setView([${storeLat}, ${storeLng}], 15);
+        </script>
+      </body>
+    </html>
+  `;
 
   return (
-    <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} bounces={false}>
-        
-        {/* Header Image Section */}
+    <SafeAreaView style={styles.container}>
+      <ScrollView showsVerticalScrollIndicator={false}>
         <View style={styles.imageContainer}>
-          <Image source={{ uri: image as string }} style={styles.mainImage} />
+          <Image source={{ uri: params.image as string }} style={styles.mainImage} />
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+            <Ionicons name="chevron-back" size={24} color="black" />
+          </TouchableOpacity>
         </View>
 
-        {/* Content Section */}
         <View style={styles.content}>
-          <View style={styles.titleSection}>
-            <Text style={styles.title}>{title}</Text>
-            <Text style={styles.store}>{store}</Text>
+          <View style={styles.headerRow}>
+            <Text style={styles.title}>{params.title}</Text>
+            <Text style={styles.freeBadge}>FREE</Text>
           </View>
-          
-          <View style={styles.divider} />
+          <Text style={styles.storeName}>{params.store}</Text>
 
-          <Text style={styles.sectionTitle}>Pick-up Location</Text>
-          <View style={styles.mapPlaceholder}>
-             <Ionicons name="map" size={40} color="#CCC" />
-             <Text style={styles.mapLabel}>Davao City, PH</Text>
-             <TouchableOpacity style={styles.floatBtn}>
-                <Text style={styles.floatBtnText}>View Map</Text>
-             </TouchableOpacity>
+          {/* THE CLAIM CODE BOX (Type Shi) */}
+          {isClaimed && (
+            <View style={styles.claimCodeContainer}>
+              <Text style={styles.claimCodeLabel}>YOUR CLAIM CODE</Text>
+              <Text style={styles.claimCodeValue}>{claimCode}</Text>
+              <View style={styles.dashedLine} />
+              <Text style={styles.claimInstruction}>Show this to the store staff upon pickup</Text>
+            </View>
+          )}
+
+          <Text style={styles.sectionTitle}>Location</Text>
+          <View style={styles.locationCard}>
+            <WebView ref={mapRef} originWhitelist={['*']} source={{ html: mapHtml }} style={styles.map} />
           </View>
-
-          <View style={styles.infoBox}>
-            <Ionicons name="time-outline" size={20} color="#00B14F" />
-            <Text style={styles.infoText}>Pickup available for the next 30 minutes.</Text>
-          </View>
-
-          {/* This button will now take the user to the Reserved tab */}
-          <TouchableOpacity 
-            style={styles.claimBtn} 
-            onPress={() => router.push('/(tabs)/reserved')}
-          >
-            <Text style={styles.claimBtnText}>Reserve This Item</Text>
-          </TouchableOpacity>
-
-          {/* Added a simple 'Go Back' text link at the bottom as a secondary exit */}
-          <TouchableOpacity 
-            onPress={() => router.back()} 
-            style={styles.secondaryBack}
-          >
-            <Text style={styles.secondaryBackText}>Cancel and Go Back</Text>
-          </TouchableOpacity>
         </View>
       </ScrollView>
-    </View>
+
+      <View style={styles.footer}>
+        <TouchableOpacity 
+          style={[styles.reserveBtn, isClaimed && styles.disabledBtn]} 
+          onPress={handleReserve}
+          disabled={loading || isClaimed}
+        >
+          {loading ? (
+            <ActivityIndicator color="white" />
+          ) : (
+            <Text style={styles.reserveBtnText}>{isClaimed ? 'ALREADY CLAIMED' : 'RESERVE FOR RESCUE'}</Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'white' },
-  imageContainer: { width: width, height: 350 },
+  imageContainer: { width: '100%', height: 300 },
   mainImage: { width: '100%', height: '100%' },
-  content: { 
+  backBtn: { position: 'absolute', top: 50, left: 20, backgroundColor: 'white', padding: 10, borderRadius: 25, elevation: 5 },
+  content: { padding: 20, paddingBottom: 100 },
+  headerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  title: { fontSize: 24, fontWeight: 'bold' },
+  freeBadge: { fontSize: 22, fontWeight: '900', color: '#00B14F' },
+  storeName: { fontSize: 16, color: '#8E8E93', marginTop: 5 },
+  
+  // Claim Code Styles
+  claimCodeContainer: { 
+    backgroundColor: '#F0F9F4', 
     padding: 25, 
-    borderTopLeftRadius: 30, 
-    borderTopRightRadius: 30, 
-    marginTop: -30, 
-    backgroundColor: 'white',
-    minHeight: 500 
-  },
-  titleSection: { marginBottom: 5 },
-  title: { fontSize: 26, fontWeight: '800', color: '#1C1C1C' },
-  store: { fontSize: 18, color: '#00B14F', fontWeight: '600', marginTop: 2 },
-  divider: { height: 1, backgroundColor: '#F0F0F0', marginVertical: 20 },
-  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15 },
-  mapPlaceholder: { 
-    height: 160, 
-    backgroundColor: '#F5F5F5', 
     borderRadius: 20, 
-    justifyContent: 'center', 
+    marginTop: 20, 
     alignItems: 'center', 
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: '#EAEAEA'
+    borderWidth: 2, 
+    borderColor: '#00B14F', 
+    borderStyle: 'dashed' 
   },
-  mapLabel: { color: '#999', marginTop: 5, fontSize: 14 },
-  floatBtn: { position: 'absolute', bottom: 12, right: 12, backgroundColor: 'white', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 10, elevation: 2 },
-  floatBtnText: { fontSize: 12, fontWeight: 'bold', color: '#00B14F' },
-  infoBox: { flexDirection: 'row', backgroundColor: '#F0F9F4', padding: 18, borderRadius: 15, alignItems: 'center', marginBottom: 35 },
-  infoText: { marginLeft: 10, color: '#444', flex: 1, fontSize: 14, lineHeight: 20 },
-  claimBtn: { backgroundColor: '#00B14F', padding: 20, borderRadius: 18, alignItems: 'center', elevation: 4 },
-  claimBtnText: { color: 'white', fontWeight: 'bold', fontSize: 18 },
-  secondaryBack: { marginTop: 20, alignItems: 'center', paddingBottom: 40 },
-  secondaryBackText: { color: '#8E8E93', fontWeight: '600' }
+  claimCodeLabel: { color: '#00B14F', fontWeight: 'bold', fontSize: 12, letterSpacing: 1 },
+  claimCodeValue: { fontSize: 36, fontWeight: '900', color: '#1C1C1E', marginVertical: 10 },
+  dashedLine: { width: '100%', height: 1, backgroundColor: '#00B14F', opacity: 0.2, marginVertical: 10 },
+  claimInstruction: { color: '#666', fontSize: 13, textAlign: 'center' },
+
+  sectionTitle: { fontSize: 18, fontWeight: 'bold', marginTop: 30, marginBottom: 15 },
+  locationCard: { height: 200, borderRadius: 20, overflow: 'hidden', marginBottom: 20 },
+  map: { flex: 1 },
+  footer: { position: 'absolute', bottom: 0, width: '100%', padding: 20, backgroundColor: 'white', borderTopWidth: 1, borderTopColor: '#EEE' },
+  reserveBtn: { backgroundColor: '#00B14F', padding: 20, borderRadius: 15, alignItems: 'center' },
+  disabledBtn: { backgroundColor: '#CCC' },
+  reserveBtnText: { color: 'white', fontWeight: 'bold', fontSize: 16 }
 });
